@@ -1,0 +1,10 @@
+.git
+.idea
+.target
+README.pdf
+*.iml
+Dockerfile*
+docker-compose*.yml
+.env
+.env.*
+**/target

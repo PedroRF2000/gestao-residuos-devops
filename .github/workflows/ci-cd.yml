@@ -1,0 +1,119 @@
+name: ci-cd-gestao-residuos
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: gestao-residuos
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Run tests
+        run: mvn -B test
+
+      - name: Build jar
+        run: mvn -B clean package -DskipTests
+
+      - name: Build Docker image
+        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop' && github.event_name != 'pull_request'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            rm -rf ~/apps/gestao-residuos-staging
+            mkdir -p ~/apps/gestao-residuos-staging
+            exit
+
+      - name: Copy files to staging
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          source: "."
+          target: "~/apps/gestao-residuos-staging"
+
+      - name: Start staging containers
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd ~/apps/gestao-residuos-staging
+            cp .env.staging .env
+            docker compose down
+            docker compose up -d --build
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to production over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            rm -rf ~/apps/gestao-residuos-prod
+            mkdir -p ~/apps/gestao-residuos-prod
+            exit
+
+      - name: Copy files to production
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          source: "."
+          target: "~/apps/gestao-residuos-prod"
+
+      - name: Start production containers
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            cd ~/apps/gestao-residuos-prod
+            cp .env.production .env
+            docker compose down
+            docker compose up -d --build

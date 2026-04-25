@@ -1,0 +1,48 @@
+services:
+  oracle-db:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle-gestao-residuos
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:-oracle}
+      APP_USER: ${DB_USERNAME:-gestao_user}
+      APP_USER_PASSWORD: ${DB_PASSWORD:-gestao123}
+    ports:
+      - "${DB_PORT:-1521}:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - gestao-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gestao-residuos-api
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-gestao_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-gestao123}
+      JWT_SECRET: ${JWT_SECRET:-404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+    networks:
+      - gestao-network
+    restart: unless-stopped
+
+volumes:
+  oracle-data:
+
+networks:
+  gestao-network:
+    driver: bridge
